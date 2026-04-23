@@ -1,0 +1,120 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Farmer Validation
+    function isValidFarmer(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 100
+          && data.location is string && data.location.size() <= 200
+          && data.crops is list && data.crops.size() <= 10
+          && data.createdBy == request.auth.uid
+          && data.status in ['active', 'inactive']
+          && data.createdAt == request.time;
+    }
+
+    // HarvestLog Validation
+    function isValidHarvestLog(data) {
+      return data.farmerId is string && isValidId(data.farmerId)
+          && data.cropType is string && data.cropType.size() <= 50
+          && data.quantity is number && data.quantity > 0
+          && data.unit is string && data.unit.size() <= 10
+          && data.qualityGrade in ['A', 'B', 'C', 'D']
+          && data.status in ['received', 'batched', 'paid']
+          && data.receivedAt == request.time;
+    }
+
+    // ExportBatch Validation
+    function isValidExportBatch(data) {
+      return data.batchName is string && data.batchName.size() <= 50
+          && data.cropType is string && data.cropType.size() <= 50
+          && data.status in ['collecting', 'processing', 'shipped', 'delivered']
+          && data.createdAt == request.time;
+    }
+
+    // --- COLLECTION RULES ---
+
+    match /farmers/{farmerId} {
+      allow get: if isSignedIn() && isValidId(farmerId);
+      allow list: if isSignedIn(); // Staff can list all farmers
+      
+      allow create: if isSignedIn() && isValidId(farmerId) 
+          && isValidFarmer(incoming())
+          && incoming().keys().hasAll(['name', 'location', 'crops', 'createdBy', 'status', 'createdAt'])
+          && incoming().keys().size() == 6;
+
+      allow update: if isSignedIn() && isValidId(farmerId)
+          && (
+            // Action: Deactivate/Update Status
+            (incoming().diff(existing()).affectedKeys().hasOnly(['status']) && incoming().status in ['active', 'inactive']) ||
+            // Action: Update Contact/Location (Admin/Creator only)
+            (existing().createdBy == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'location', 'crops']) && incoming().name is string)
+          );
+      
+      allow delete: if false; // Audit trail preservation
+    }
+
+    match /harvestLogs/{logId} {
+      allow get: if isSignedIn() && isValidId(logId);
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() && isValidId(logId)
+          && isValidHarvestLog(incoming())
+          && incoming().status == 'received'
+          && exists(/databases/$(database)/documents/farmers/$(incoming().farmerId));
+
+      allow update: if isSignedIn() && isValidId(logId)
+          && (
+            // Action: Batching (Assign to a batch)
+            (incoming().diff(existing()).affectedKeys().hasOnly(['batchId', 'status']) 
+             && incoming().status == 'batched' 
+             && isValidId(incoming().batchId)) ||
+            // Action: Payment Processing
+            (incoming().diff(existing()).affectedKeys().hasOnly(['paymentDue', 'status'])
+             && incoming().status == 'paid')
+          );
+          
+      allow delete: if false;
+    }
+
+    match /exportBatches/{batchId} {
+      allow get: if isSignedIn() && isValidId(batchId);
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() && isValidId(batchId)
+          && isValidExportBatch(incoming())
+          && incoming().status == 'collecting';
+
+      allow update: if isSignedIn() && isValidId(batchId)
+          && (
+            // Action: Progress Status
+            (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'destination'])
+             && incoming().status in ['processing', 'shipped', 'delivered']) ||
+            // Action: Accumulate Data
+            (incoming().diff(existing()).affectedKeys().hasOnly(['totalQuantity', 'logsCount']))
+          );
+
+      allow delete: if false;
+    }
+  }
+}

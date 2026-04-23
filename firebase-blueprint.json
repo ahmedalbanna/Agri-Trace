@@ -1,0 +1,68 @@
+{
+  "entities": {
+    "Farmer": {
+      "title": "Farmer Profile",
+      "description": "Information about a farmer member of the cooperative.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Full name of the farmer" },
+        "location": { "type": "string", "description": "Geographic location of the farm" },
+        "landSize": { "type": "number", "description": "Size of the land in hectares/acres" },
+        "crops": { "type": "array", "description": "Main crops grown (e.g., Coffee, Honey)" },
+        "phone": { "type": "string", "description": "Contact phone number" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string", "description": "User ID of the employee who registered the farmer" }
+      },
+      "required": ["name", "location", "crops", "createdAt", "createdBy"]
+    },
+    "HarvestLog": {
+      "title": "Harvest Log",
+      "description": "Record of a specific harvest delivery from a farmer.",
+      "type": "object",
+      "properties": {
+        "farmerId": { "type": "string", "description": "ID of the farmer" },
+        "farmerName": { "type": "string", "description": "Name of the farmer (denormalized for easy listing)" },
+        "cropType": { "type": "string", "description": "Type of crop delivered" },
+        "quantity": { "type": "number", "description": "Quantity delivered" },
+        "unit": { "type": "string", "description": "Unit of measurement (kg, liters, etc.)" },
+        "qualityGrade": { "type": "string", "enum": ["A", "B", "C", "D"], "description": "Quality assessment" },
+        "harvestDate": { "type": "string", "format": "date-time", "description": "Date of harvesting" },
+        "receivedAt": { "type": "string", "format": "date-time", "description": "Date received by co-op" },
+        "status": { "type": "string", "enum": ["received", "batched", "paid"] },
+        "paymentDue": { "type": "number", "description": "Amount due to farmer" },
+        "batchId": { "type": "string", "description": "Reference to the Export Batch" }
+      },
+      "required": ["farmerId", "cropType", "quantity", "unit", "qualityGrade", "receivedAt", "status"]
+    },
+    "ExportBatch": {
+      "title": "Export Batch",
+      "description": "A collection of harvest logs grouped for export.",
+      "type": "object",
+      "properties": {
+        "batchName": { "type": "string", "description": "identifier for the batch" },
+        "cropType": { "type": "string" },
+        "totalQuantity": { "type": "number" },
+        "logsCount": { "type": "number" },
+        "status": { "type": "string", "enum": ["collecting", "processing", "shipped", "delivered"] },
+        "destination": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["batchName", "cropType", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "farmers/{farmerId}": {
+      "schema": "Farmer",
+      "description": "Main registry of farmers."
+    },
+    "harvestLogs/{logId}": {
+      "schema": "HarvestLog",
+      "description": "Detailed harvest delivery records."
+    },
+    "exportBatches/{batchId}": {
+      "schema": "ExportBatch",
+      "description": "Groups of harvests for international export."
+    }
+  }
+}
